@@ -1,0 +1,22 @@
+Source: rascsi
+Section: electronics
+Priority: optional
+Maintainer: Chris Pickel <sfiera@twotaled.com>
+Build-Depends:
+ binutils-arm-linux-gnueabihf,
+ debhelper (>=9),
+ g++-arm-linux-gnueabihf,
+ gcc-arm-linux-gnueabihf
+Standards-Version: 4.3.0
+Homepage: https://github.com/akuker/rascsi/wiki
+Vcs-Git: https://github.com/akuker/rascsi.git
+Vcs-Browser: https://github.com/akuker/rascsi
+
+Package: rascsi
+Architecture: armhf
+Depends:
+ ${shlibs:Depends},
+ ${misc:Depends}
+Description: SCSI emulator using Raspberry Pi GPIO
+ RaSCSI emulates SCSI devices or a host using a hardware adapter
+ connected to a Raspberry Pi’s GPIO pins.

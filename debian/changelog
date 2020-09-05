@@ -1,0 +1,5 @@
+rascsi (1.0.0-1) UNRELEASED; urgency=medium
+
+  * First debianized release.
+
+ -- Chris Pickel <sfiera@twotaled.com>  Sat, 29 Aug 2020 01:14:38 +0000

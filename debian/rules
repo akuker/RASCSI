@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_build:
+	make -C src/raspberrypi
+
+override_dh_auto_install:
+	make -C src/raspberrypi install PREFIX=/usr DESTDIR=$(shell pwd)/debian/tmp

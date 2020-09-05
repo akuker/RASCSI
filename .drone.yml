@@ -1,0 +1,30 @@
+---
+kind: pipeline
+type: docker
+name: raspbian
+
+platform:
+  os: linux
+  arch: arm
+
+steps:
+- name: dist
+  image: 'debian@sha256:43e8691b4e25f4b0fd0f10bca8ea11b9f0578b0e5d2fe3b085290455dd07c0b6'
+  commands:
+  - mkdir -p dist
+  - xargs tar -cvzf dist/rascsi.tar.gz
+        --exclude=.git --exclude=dist --exclude=debian --exclude=hw
+        --exclude='*.pdf' --exclude='*.deb'
+        --transform='s,^\.,rascsi,' --show-stored-names
+        .
+- name: deb
+  image: 'arescentral/deb-buster@sha256:4454a2df35ac65124dfb9106e800caa6dfca54c77d75ad0a0f721a0e68a25fa7'
+- name: check
+  image: 'debian@sha256:43e8691b4e25f4b0fd0f10bca8ea11b9f0578b0e5d2fe3b085290455dd07c0b6'
+  commands:
+  - uname -a
+  - dpkg -i rascsi_*_armhf.deb
+  - whereis rascsi
+  - whereis rasctl
+
+...

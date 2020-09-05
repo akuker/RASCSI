@@ -35,8 +35,9 @@ RASDUMP = rasdump
 SASIDUMP = sasidump
 SCSIMON = scsimon
 
-USR_LOCAL_BIN = /usr/local/bin
-MAN_PAGE_DIR  = /usr/share/man/man1
+PREFIX ?= /usr/local
+INSTALL_BINDIR = $(PREFIX)/bin
+INSTALL_MANDIR  = $(PREFIX)/share/man/man1
 DOC_DIR = ../../doc
 
 OBJDIR := ./obj/$(shell echo $(CONNECT_TYPE) | tr '[:upper:]' '[:lower:]')
@@ -134,11 +135,11 @@ clean:
 run:
 	sudo ./$(RASCSI) -ID1 /home/pi/HARDDISK2.hda -ID6 /home/pi/marathon.iso
 
-install: $(MAN_PAGE_DIR)/rascsi.1 $(MAN_PAGE_DIR)/rasctl.1
-	sudo cp $(BINDIR)/$(RASCTL) $(USR_LOCAL_BIN)
-	sudo cp $(BINDIR)/$(RASCSI) $(USR_LOCAL_BIN)
+install: $(INSTALL_MANDIR)/rascsi.1 $(INSTALL_MANDIR)/rasctl.1
+	sudo cp $(BINDIR)/$(RASCTL) $(DESTDIR)$(INSTALL_BINDIR)
+	sudo cp $(BINDIR)/$(RASCSI) $(DESTDIR)$(INSTALL_BINDIR)
 
-$(MAN_PAGE_DIR)/%.1 : $(DOC_DIR)/%.1
+$(INSTALL_MANDIR)/%.1 : $(DOC_DIR)/%.1
 	sudo cp $< $@
 
 $(DOC_DIR)/%_man_page.txt : $(DOC_DIR)/%.1
