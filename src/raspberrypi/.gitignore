@@ -12,3 +12,8 @@ sasidump
 rasdump
 obj
 bin
+/rascsi_interface.pb.cpp
+/rascsi_interface.pb.h
+.project
+.cproject
+.settings

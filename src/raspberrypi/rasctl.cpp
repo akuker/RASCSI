@@ -14,17 +14,19 @@
 #include "rascsi_version.h"
 #include "exceptions.h"
 #include "rasutil.h"
-#include "rasctl_interface.pb.h"
+#include "rascsi_interface.pb.h"
+#include <sstream>
+#include <iostream>
 
 using namespace std;
-using namespace rasctl_interface;
+using namespace rascsi_interface;
 
 //---------------------------------------------------------------------------
 //
 //	Send Command
 //
 //---------------------------------------------------------------------------
-BOOL SendCommand(const char *hostname, const Command& command)
+int SendCommand(const char *hostname, const Command& command)
 {
 	// Create a socket to send the command
 	int fd = socket(AF_INET, SOCK_STREAM, 0);
@@ -43,36 +45,82 @@ BOOL SendCommand(const char *hostname, const Command& command)
 
 	// Connect
 	if (connect(fd, (struct sockaddr *)&server, sizeof(struct sockaddr_in)) < 0) {
-		fprintf(stderr, "Error : Can't connect to rascsi process on host '%s'\n", hostname);
-		return false;
+		cerr << "Error: Can't connect to rascsi process on host '" << hostname << "'" << endl;
+		return -1;
 	}
 
 	string data;
     command.SerializeToString(&data);
 
-	// Receive the message
-    bool status = true;
     try {
         SerializeProtobufData(fd, data);
-
-        Result result;
-    	result.ParseFromString(DeserializeProtobufData(fd));
-
-    	status = result.status();
-
-    	if (!result.msg().empty()) {
-    		cout << result.msg();
-    	}
     }
     catch(const ioexception& e) {
     	cerr << "Error : " << e.getmsg() << endl;
 
+    	close(fd);
+
+    	return -1;
+    }
+
+	return fd;
+}
+
+//---------------------------------------------------------------------------
+//
+//	Receive command result
+//
+//---------------------------------------------------------------------------
+bool ReceiveResult(int fd) {
+    bool status = true;
+    try {
+        Result result;
+    	result.ParseFromString(DeserializeProtobufData(fd));
+
+    	status = result.status();
+    	if (status) {
+    		cerr << result.msg();
+    	}
+    	else {
+    		cout << result.msg();
+    	}
+    }
+    catch(const ioexception& e) {
+    	cerr << "Error: " << e.getmsg() << endl;
+
     	// Fall through
+
+    	status = false;
     }
 
     close(fd);
 
-	return status;
+    return status;
+}
+
+string ListDevices(const Devices& devices) {
+	ostringstream s;
+
+	if (devices.devices_size()) {
+    	s << endl
+    		<< "+----+----+------+-------------------------------------" << endl
+    		<< "| ID | UN | TYPE | DEVICE STATUS" << endl
+			<< "+----+----+------+-------------------------------------" << endl;
+	}
+	else {
+		return "No images currently attached.\n";
+	}
+
+	for (int i = 0; i < devices.devices_size() ; i++) {
+		Device device = devices.devices(i);
+
+		s << "|  " << device.id() << " |  " << device.un() << " | " << device.type() << " | "
+				<< device.file() << (device.read_only() ? " (WRITEPROTECT)" : "") << endl;
+	}
+
+	s << "+----+----+------+-------------------------------------" << endl;
+
+	return s.str();
 }
 
 //---------------------------------------------------------------------------
@@ -88,7 +136,7 @@ int main(int argc, char* argv[])
 	if (argc < 2) {
 		cerr << "SCSI Target Emulator RaSCSI Controller" << endl;
 		cerr << "version " << rascsi_get_version_string() << " (" << __DATE__ << ", " << __TIME__ << ")" << endl;
-		cerr << "Usage: " << argv[0] << " -i ID [-u UNIT] [-c CMD] [-t TYPE] [-f FILE] [-h HOSTNAME] [-s LOG_LEVEL]" << endl;
+		cerr << "Usage: " << argv[0] << " -i ID [-u UNIT] [-c CMD] [-t TYPE] [-f FILE] [-h HOSTNAME] [-g LOG_LEVEL]" << endl;
 		cerr << " where  ID := {0|1|2|3|4|5|6|7}" << endl;
 		cerr << "        UNIT := {0|1} default setting is 0." << endl;
 		cerr << "        CMD := {attach|detach|insert|eject|protect}" << endl;
@@ -112,7 +160,7 @@ int main(int argc, char* argv[])
 	const char *hostname = "localhost";
 	string params;
 	opterr = 0;
-	while ((opt = getopt(argc, argv, "i:u:c:t:f:h:s:l")) != -1) {
+	while ((opt = getopt(argc, argv, "i:u:c:t:f:h:g:l")) != -1) {
 		switch (opt) {
 			case 'i':
 				id = optarg[0] - '0';
@@ -190,7 +238,7 @@ int main(int argc, char* argv[])
 				hostname = optarg;
 				break;
 
-			case 's':
+			case 'g':
 				cmd = LOG_LEVEL;
 				params = optarg;
 				break;
@@ -202,14 +250,39 @@ int main(int argc, char* argv[])
 	if (cmd == LOG_LEVEL) {
 		command.set_cmd(LOG_LEVEL);
 		command.set_params(params);
-		SendCommand(hostname, command);
+		int fd = SendCommand(hostname, command);
+		if (fd < 0) {
+			exit(ENOTCONN);
+		}
+
+		ReceiveResult(fd);
 		exit(0);
 	}
 
 	// List display only
 	if (cmd == LIST || (id < 0 && type == UNDEFINED && params.empty())) {
 		command.set_cmd(LIST);
-		SendCommand(hostname, command);
+		int fd = SendCommand(hostname, command);
+		if (fd < 0) {
+			exit(ENOTCONN);
+		}
+
+		Devices devices;
+		try {
+			devices.ParseFromString(DeserializeProtobufData(fd));
+		}
+		catch(const ioexception& e) {
+		   	cerr << "Error : " << e.getmsg() << endl;
+
+		   	close(fd);
+
+		   	exit(-1);
+		}
+
+		close (fd);
+
+		cout << ListDevices(devices) << endl;
+
 		exit(0);
 	}
 
@@ -261,10 +334,15 @@ int main(int argc, char* argv[])
 	if (!params.empty()) {
 		command.set_params(params);
 	}
-	if (!SendCommand(hostname, command)) {
+
+	int fd = SendCommand(hostname, command);
+	if (fd == -1) {
 		exit(ENOTCONN);
 	}
 
+	bool status = ReceiveResult(fd);
+	close(fd);
+
 	// All done!
-	exit(0);
+	exit(status ? 0 : -1);
 }
