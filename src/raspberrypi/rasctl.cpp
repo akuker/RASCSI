@@ -10,13 +10,13 @@
 //---------------------------------------------------------------------------
 
 #include <netdb.h>
+#include "google/protobuf/message_lite.h"
 #include "os.h"
 #include "rascsi_version.h"
 #include "exceptions.h"
 #include "rasutil.h"
 #include "rascsi_interface.pb.h"
 #include <sstream>
-#include <iostream>
 
 using namespace std;
 using namespace rascsi_interface;
@@ -26,44 +26,45 @@ using namespace rascsi_interface;
 //	Send Command
 //
 //---------------------------------------------------------------------------
-int SendCommand(const char *hostname, const Command& command)
+int SendCommand(const string& hostname, const Command& command)
 {
-	// Create a socket to send the command
-	int fd = socket(AF_INET, SOCK_STREAM, 0);
-	struct sockaddr_in server;
-	memset(&server, 0, sizeof(server));
-	server.sin_family = AF_INET;
-	server.sin_port = htons(6868);
-	server.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	int fd;
 
-	struct hostent *host = gethostbyname(hostname);
-	if(!host) {
-		fprintf(stderr, "Error : Can't resolve hostname '%s'\n", hostname);
-		return false;
-	}
-    memcpy((char *)&server.sin_addr.s_addr, (char *)host->h_addr,  host->h_length);
+	try {
+    	struct hostent *host = gethostbyname(hostname.c_str());
+    	if (!host) {
+    		throw ioexception("Can't resolve hostname '" + hostname + "'");
+    	}
 
-	// Connect
-	if (connect(fd, (struct sockaddr *)&server, sizeof(struct sockaddr_in)) < 0) {
-		cerr << "Error: Can't connect to rascsi process on host '" << hostname << "'" << endl;
-		return -1;
-	}
+    	fd = socket(AF_INET, SOCK_STREAM, 0);
+    	if (fd < 0) {
+    		throw ioexception("Can't create socket");
+    	}
 
-	string data;
-    command.SerializeToString(&data);
+    	struct sockaddr_in server;
+    	memset(&server, 0, sizeof(server));
+    	server.sin_family = AF_INET;
+    	server.sin_port = htons(6868);
+    	server.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    	memcpy(&server.sin_addr.s_addr, host->h_addr, host->h_length);
 
-    try {
-        SerializeProtobufData(fd, data);
+    	if (connect(fd, (struct sockaddr *)&server, sizeof(struct sockaddr_in)) < 0) {
+    		throw ioexception("Can't connect to rascsi process on host '" + hostname + "'");
+    	}
+
+        SerializeMessage(fd, command);
     }
     catch(const ioexception& e) {
-    	cerr << "Error : " << e.getmsg() << endl;
+    	cerr << "Error: " << e.getmsg() << endl;
 
-    	close(fd);
+        if (fd >= 0) {
+        	close(fd);
+        }
 
-    	return -1;
+        return -1;
     }
 
-	return fd;
+    return fd;
 }
 
 //---------------------------------------------------------------------------
@@ -75,7 +76,7 @@ bool ReceiveResult(int fd) {
     bool status = true;
     try {
         Result result;
-    	result.ParseFromString(DeserializeProtobufData(fd));
+    	DeserializeMessage(fd, result);
 
     	status = result.status();
     	if (status) {
@@ -121,6 +122,60 @@ string ListDevices(const Devices& devices) {
 	s << "+----+----+------+-------------------------------------" << endl;
 
 	return s.str();
+}
+
+void Deserialize(google::protobuf::MessageLite& message) {
+	const string data;
+	message.ParseFromString(data);
+}
+
+//---------------------------------------------------------------------------
+//
+//	Command implementations
+//
+//---------------------------------------------------------------------------
+
+void CommandList(const string& hostname)
+{
+	Command command;
+	command.set_cmd(LIST);
+
+	int fd = SendCommand(hostname.c_str(), command);
+	if (fd < 0) {
+		exit(ENOTCONN);
+	}
+
+	Devices devices;
+	try {
+		DeserializeMessage(fd, devices);
+	}
+	catch(const ioexception& e) {
+		cerr << "Error: " << e.getmsg() << endl;
+
+		close(fd);
+
+		exit(-1);
+	}
+
+	close (fd);
+
+	cout << ListDevices(devices) << endl;
+}
+
+void CommandLogLevel(const string& hostname, const string& log_level)
+{
+	Command command;
+	command.set_cmd(LOG_LEVEL);
+	command.set_params(log_level);
+
+	int fd = SendCommand(hostname.c_str(), command);
+	if (fd < 0) {
+		exit(ENOTCONN);
+	}
+
+	ReceiveResult(fd);
+
+	close(fd);
 }
 
 //---------------------------------------------------------------------------
@@ -248,41 +303,13 @@ int main(int argc, char* argv[])
 	Command command;
 
 	if (cmd == LOG_LEVEL) {
-		command.set_cmd(LOG_LEVEL);
-		command.set_params(params);
-		int fd = SendCommand(hostname, command);
-		if (fd < 0) {
-			exit(ENOTCONN);
-		}
-
-		ReceiveResult(fd);
+		CommandLogLevel(hostname, params);
 		exit(0);
 	}
 
 	// List display only
 	if (cmd == LIST || (id < 0 && type == UNDEFINED && params.empty())) {
-		command.set_cmd(LIST);
-		int fd = SendCommand(hostname, command);
-		if (fd < 0) {
-			exit(ENOTCONN);
-		}
-
-		Devices devices;
-		try {
-			devices.ParseFromString(DeserializeProtobufData(fd));
-		}
-		catch(const ioexception& e) {
-		   	cerr << "Error : " << e.getmsg() << endl;
-
-		   	close(fd);
-
-		   	exit(-1);
-		}
-
-		close (fd);
-
-		cout << ListDevices(devices) << endl;
-
+		CommandList(hostname);
 		exit(0);
 	}
 
@@ -336,7 +363,7 @@ int main(int argc, char* argv[])
 	}
 
 	int fd = SendCommand(hostname, command);
-	if (fd == -1) {
+	if (fd < 0) {
 		exit(ENOTCONN);
 	}
 

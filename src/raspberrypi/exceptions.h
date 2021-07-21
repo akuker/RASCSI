@@ -13,8 +13,11 @@
 #define exceptions_h
 
 #include <exception>
+#include <string>
 
-class lunexception : public std::exception {
+using namespace std;
+
+class lunexception final : public exception {
 private:
         int lun;
 
@@ -28,16 +31,16 @@ public:
         }
 };
 
-class ioexception : public std::exception {
+class ioexception : public exception {
 private:
-	const char *msg;
+	string msg;
 
 public:
-	ioexception(const char *_msg) : msg(_msg) { }
+	ioexception(const string& _msg) : msg(_msg) { }
 
 	~ioexception() { }
 
-	const char *getmsg() const {
+	const string& getmsg() const {
 		return msg;
 	}
 };

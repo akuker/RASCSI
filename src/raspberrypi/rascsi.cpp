@@ -303,7 +303,7 @@ Devices GetDevices() {
 //	List and log devices
 //
 //---------------------------------------------------------------------------
-string ListDevices(Devices devices) {
+string ListDevices(const Devices& devices) {
 	ostringstream s;
 
 	if (devices.devices_size()) {
@@ -465,10 +465,7 @@ bool ReturnStatus(int fd, bool status = true, const string msg = "") {
 		Result result;
 		result.set_status(status);
 		result.set_msg(msg + "\n");
-
-		string data;
-		result.SerializeToString(&data);
-		SerializeProtobufData(fd, data);
+		SerializeMessage(fd, result);
 	}
 
 	return status;
@@ -879,16 +876,13 @@ static void *MonThread(void *param)
 
 			// Fetch the command
 			Command command;
-			command.ParseFromString(DeserializeProtobufData(fd));
+			DeserializeMessage(fd, command);
 
 			// List all of the devices
 			if (command.cmd() == LIST) {
 				Devices devices = GetDevices();
 				ListDevices(devices);
-
-				string data;
-				devices.SerializeToString(&data);
-				SerializeProtobufData(fd, data);
+				SerializeMessage(fd, devices);
 			}
 			else if (command.cmd() == LOG_LEVEL) {
 				SetLogLevel(command.params());
@@ -907,7 +901,7 @@ static void *MonThread(void *param)
 		}
 	}
 	catch(const ioexception& e) {
-		LOGERROR("%s", e.getmsg());
+		LOGERROR("%s", e.getmsg().c_str());
 
 		// Fall through
 	}
